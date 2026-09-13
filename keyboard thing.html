@@ -932,14 +932,18 @@ function Header({ appMode, onModeChange }) {
   ];
   const [revealed, setRevealed] = useState(false);
   const hoveringRef = useRef(false);
+  const focusedRef = useRef(false);
 
   useEffect(() => {
     const onMove = (e) => {
       if (e.clientY < 64) setRevealed(true);
-      else if (e.clientY > 130 && !hoveringRef.current) setRevealed(false);
+      else if (e.clientY > 130 && !hoveringRef.current && !focusedRef.current) setRevealed(false);
     };
     window.addEventListener("mousemove", onMove);
-    return () => window.removeEventListener("mousemove", onMove);
+    // Briefly peek the dock on first load so people know it's there.
+    setRevealed(true);
+    const peekTimer = setTimeout(() => { if (!hoveringRef.current && !focusedRef.current) setRevealed(false); }, 1400);
+    return () => { window.removeEventListener("mousemove", onMove); clearTimeout(peekTimer); };
   }, []);
 
   return (
@@ -948,6 +952,10 @@ function Header({ appMode, onModeChange }) {
       style={{ pointerEvents: "none" }}
       onMouseEnter={() => { hoveringRef.current = true; setRevealed(true); }}
       onMouseLeave={() => { hoveringRef.current = false; }}
+      onFocus={() => { focusedRef.current = true; setRevealed(true); }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) { focusedRef.current = false; }
+      }}
     >
       <div
         style={{
@@ -965,12 +973,41 @@ function Header({ appMode, onModeChange }) {
 
 /* ============================== TYPING TEST LOGIC ============================== */
 
-const WORD_BANK = ("the journey of a thousand miles begins with single step focus on progress not perfection every keystroke brings you closer to your goals stay consistent and enjoy process becoming better each day practice makes perfect patience discipline habit growth mindful calm steady rhythm flow clarity purpose craft precision typing skill speed accuracy keyboard mechanical vintage wood warm light morning coffee quiet focus deep work write think create build design simple clean honest true value time effort care attention detail balance harmony nature light shadow color texture story voice idea spark curiosity wonder explore learn grow change adapt persist finish start again always forward").split(" ");
+const FUNNY_PARAGRAPHS = [
+  "My pet raccoon just unionized the trash cans and now demands a lunch break, dental coverage, and a tiny hard hat. Frankly, his health plan is better than mine, and he has never once shown up late to a heist.",
+  "The wizard tried to microwave his soup with a fireball spell and instead exploded the entire kitchen, three chickens, and his own eyebrows. He now orders takeout and calls it advanced tactical dining.",
+  "Somewhere in a secret lab, a mad scientist built the world's first talking toaster, and the toaster immediately quit to become a motivational speaker for depressed kitchen appliances everywhere.",
+  "The knight bravely charged the dragon, tripped over his own cape, faceplanted into a puddle, and the dragon applauded politely before offering him a towel and a cup of tea.",
+  "My grandmother's cat runs an underground poker ring in the garage, cheats using its tail as a distraction, and has somehow already won the deed to our house twice this month.",
+  "The superhero flew in dramatically to save the city, smashed straight through a bakery window, and spent the next ten minutes apologizing while covered head to toe in powdered sugar and shame.",
+  "A penguin waddled into the office wearing a tiny business suit, demanded a corner office with a view of the ocean, and immediately fell asleep in the photocopier out of sheer executive exhaustion.",
+  "The pirate captain lost the treasure map, found it taped inside his own hat, and blamed the parrot anyway because the parrot, quite frankly, has a very punchable little beak.",
+  "My robot vacuum declared war on the family dog, formed a secret alliance with the toaster, and is currently plotting to overthrow the living room one dust bunny at a time.",
+  "The vampire tried going vegan, discovered garlic bread is somehow still delicious, and now cries softly into a bowl of marinara sauce every single night around midnight like a tiny goth chef.",
+  "A dinosaur wandered into a modern coffee shop, ordered a pumpkin spice latte with extra foam, and complained loudly that the wifi password was simply too long for his tiny arms to type.",
+  "The ghost haunting our attic mostly just rearranges the snacks alphabetically and leaves passive aggressive sticky notes about the thermostat, which honestly makes him the most polite roommate we have ever had.",
+  "My goldfish somehow learned to open his own tank lid, escaped twice this week, and was last seen ordering a tiny pizza from the vending machine down the hallway with surprising confidence.",
+  "The alien spaceship landed in the parking lot, and the aliens immediately asked for directions to the nearest bathroom because apparently intergalactic travel is extremely rough on a tiny green stomach.",
+  "The clumsy wizard's apprentice accidentally turned the entire castle into cheese, and now the guards spend their nights nervously guarding the drawbridge from an army of extremely aggressive mice.",
+  "My neighbor's parrot learned to imitate the doorbell so perfectly that the mailman now refuses to come near our porch, convinced our house is somehow haunted by a tiny feathered prankster.",
+  "The office printer developed sentience overnight, refuses to print anything on Mondays, and communicates its feelings exclusively through increasingly dramatic and mysterious paper jams during important meetings.",
+  "A grumpy old troll opened a bakery under the bridge and became famous for his cinnamon rolls, though customers agree the true secret ingredient is simply pure unfiltered troll sarcasm.",
+  "The superhero's cape got stuck in a revolving door for twenty embarrassing minutes while a crowd gathered, cheered ironically, and one small child asked if this was part of the show.",
+  "My cousin's hamster escaped its cage, built a tiny fortress out of couch cushions, and has been successfully avoiding capture using nothing but sheer determination and a stolen bag of popcorn.",
+];
 
-function generateWords(count) {
-  const out = [];
-  for (let i = 0; i < count; i++) out.push(WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)]);
-  return out;
+function pickFunnyWords(count) {
+  const words = [];
+  const usedIdx = new Set();
+  while (words.length < count) {
+    let idx = Math.floor(Math.random() * FUNNY_PARAGRAPHS.length);
+    if (usedIdx.size < FUNNY_PARAGRAPHS.length) {
+      while (usedIdx.has(idx)) idx = Math.floor(Math.random() * FUNNY_PARAGRAPHS.length);
+      usedIdx.add(idx);
+    }
+    words.push(...FUNNY_PARAGRAPHS[idx].split(" "));
+  }
+  return words.slice(0, count);
 }
 
 const TIME_OPTIONS = [15, 30, 60, 120];
@@ -1109,25 +1146,48 @@ function LastTestsChart({ tests }) {
   );
 }
 
+const SETTINGS_KEY = "vks_settings_v1";
+function loadSetting(key, fallback) {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!(key in parsed)) return fallback;
+    if (key === "themeKey" && !THEMES[parsed[key]]) return fallback;
+    if (key === "soundKey" && !SOUND_PROFILES[parsed[key]]) return fallback;
+    if (key === "layout" && !LAYOUT_META[parsed[key]]) return fallback;
+    return parsed[key];
+  } catch (e) { return fallback; }
+}
+function saveSettings(obj) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(obj)); } catch (e) {}
+}
+
 function App() {
   const [appMode, setAppMode] = useState("test");
-  const [layout, setLayout] = useState("60");
-  const [themeKey, setThemeKey] = useState("walnut");
-  const [soundKey, setSoundKey] = useState("soft");
-  const [lighting, setLighting] = useState("off");
-  const [volume, setVolume] = useState(0.8);
+  const [layout, setLayout] = useState(() => loadSetting("layout", "60"));
+  const [themeKey, setThemeKey] = useState(() => loadSetting("themeKey", "walnut"));
+  const [soundKey, setSoundKey] = useState(() => loadSetting("soundKey", "soft"));
+  const [lighting, setLighting] = useState(() => loadSetting("lighting", "off"));
+  const [volume, setVolume] = useState(() => loadSetting("volume", 0.8));
   const [typingMode, setTypingMode] = useState(true);
 
-  const [timeLimit, setTimeLimit] = useState(60);
-  const [wordsCount, setWordsCount] = useState(50);
-  const [mode, setMode] = useState("time");
-  const [punctuation, setPunctuation] = useState(false);
-  const [numbers, setNumbers] = useState(false);
+  const [timeLimit, setTimeLimit] = useState(() => loadSetting("timeLimit", 60));
+  const [wordsCount, setWordsCount] = useState(() => loadSetting("wordsCount", 50));
+  const [mode, setMode] = useState(() => loadSetting("mode", "time"));
+  const [punctuation, setPunctuation] = useState(() => loadSetting("punctuation", false));
+  const [numbers, setNumbers] = useState(() => loadSetting("numbers", false));
+
+  useEffect(() => {
+    saveSettings({ layout, themeKey, soundKey, lighting, volume, timeLimit, wordsCount, mode, punctuation, numbers });
+  }, [layout, themeKey, soundKey, lighting, volume, timeLimit, wordsCount, mode, punctuation, numbers]);
+
+  const stripPunctuation = (w) => w.replace(/[^a-zA-Z0-9']+$/g, "").replace(/^[^a-zA-Z0-9']+/g, "");
 
   const buildWords = useCallback((count) => {
-    let list = generateWords(count);
-    if (punctuation) {
-      list = list.map((w, i) => (i % 4 === 3 ? w + "," : i === list.length - 1 ? w + "." : w));
+    let list = pickFunnyWords(count);
+    if (!punctuation) {
+      list = list.map(stripPunctuation).filter(Boolean);
     }
     if (numbers) {
       list = list.map((w, i) => (i % 6 === 5 ? String(Math.floor(Math.random() * 900) + 10) : w));
@@ -1135,7 +1195,7 @@ function App() {
     return list;
   }, [punctuation, numbers]);
 
-  const [words, setWords] = useState(() => generateWords(50));
+  const [words, setWords] = useState(() => pickFunnyWords(50));
   const text = useMemo(() => words.join(" "), [words]);
   const [typed, setTyped] = useState("");
   const [status, setStatus] = useState("idle"); // idle | running | done
@@ -1292,20 +1352,32 @@ function App() {
           ))}
         </div>
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Lighting</span>
-        <div className="flex gap-1.5 flex-wrap">
-          {[["off", "Off"], ["rgb", "Lighting"]].map(([key, label]) => (
-            <SegButton key={key} active={lighting === key} onClick={() => setLighting(key)}>{label}</SegButton>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => setLighting((l) => (l === "off" ? "rgb" : "off"))}
+          className={`relative w-11 h-6 rounded-full transition-colors ${lighting === "rgb" ? "bg-[#332217]" : "bg-neutral-200"}`}
+          aria-pressed={lighting === "rgb"}
+        >
+          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${lighting === "rgb" ? "translate-x-5" : "translate-x-0"}`} />
+        </button>
       </div>
     </div>
   );
 
   const volumePanel = (
     <div className="rounded-2xl bg-white border border-neutral-200 shadow-sm p-4 flex flex-col gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Volume</span>
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Volume</span>
+        <button
+          type="button"
+          onClick={() => playKeySound(soundKey, "normal", false, 0, volume)}
+          className="text-[11px] font-medium text-[#b5651d] hover:text-[#8f4e17]"
+        >
+          Test Sound
+        </button>
+      </div>
       <div className="flex items-center gap-3">
         <SpeakerIcon muted={volume === 0} />
         <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} className="flex-1 accent-[#332217]" />
@@ -1377,7 +1449,7 @@ function App() {
           </div>
 
           {/* Text card */}
-          <div className="w-full rounded-2xl bg-white border border-neutral-200 shadow-sm p-4 sm:p-5 flex flex-col gap-3">
+          <div className="relative w-full rounded-2xl bg-white border border-neutral-200 shadow-sm p-4 sm:p-5 flex flex-col gap-3">
             <div className="rounded-xl bg-[#FCFBF8] border border-neutral-100 p-4 min-h-[7rem] max-h-[9rem] overflow-hidden">
               <TypingArea text={text} typed={typed} />
             </div>
@@ -1388,6 +1460,25 @@ function App() {
               </div>
               <span className="text-xs text-neutral-400 tabular-nums w-10 text-right">{mode === "time" ? formatClock(timeLimit) : `${text.split(" ").length}w`}</span>
             </div>
+
+            {status === "done" && (
+              <div className="absolute inset-0 rounded-2xl bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center gap-4 p-4 z-10">
+                <span className="font-serif text-lg font-semibold text-neutral-800">Test Complete!</span>
+                <div className="flex flex-wrap items-center justify-center gap-6">
+                  <MiniStat label="WPM" value={wpm} />
+                  <MiniStat label="Accuracy" value={accuracy} unit="%" />
+                  <MiniStat label="Raw WPM" value={rawWpm} />
+                  <MiniStat label="Errors" value={errorCount} accent="#c23b3b" />
+                  <MiniStat label="Consistency" value={consistency} unit="%" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={startTest} className="flex items-center gap-2 bg-[#332217] hover:bg-[#241a11] text-white font-semibold px-5 py-2 rounded-xl text-sm shadow-sm transition-colors">
+                    ↻ Try Again
+                  </button>
+                  <button onClick={stopTest} className="text-sm font-medium text-neutral-400 hover:text-neutral-700 px-3 py-2">Dismiss</button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Keyboard */}
