@@ -184,7 +184,22 @@ const THEMES = {
     bezel: "linear-gradient(155deg, #232324 0%, #1b1b1c 50%, #131313 100%)",
     accent: "#a3a3a6", isWood: false,
   },
+  prism: {
+    label: "Prism",
+    caseGradient: "linear-gradient(178deg, #232a42 0%, #1c2236 30%, #171b2c 60%, #111420 100%)",
+    keycapBase: "#f5f1e6", legendInk: "#2a2620", legendInkSoft: "#7a7468",
+    bezel: "linear-gradient(155deg, #10131e 0%, #0b0d16 50%, #07080d 100%)",
+    accent: "#c23b34", isWood: false, multiColor: true,
+  },
 };
+
+function getPrismKeyColors(id) {
+  const red = new Set(["esc", "enter", "space"]);
+  const navy = new Set(["tab", "capslock", "lshift", "rshift", "lctrl", "lwin", "lalt", "ralt", "rwin", "fn", "backspace", "grave"]);
+  if (red.has(id)) return { bg: "#c23b34", ink: "#fbeee9", dark: true };
+  if (navy.has(id)) return { bg: "#232a42", ink: "#eef0f6", dark: true };
+  return { bg: "#f5f1e6", ink: "#2a2620", dark: false };
+}
 
 /* ============================== SOUND ============================== */
 
@@ -485,8 +500,13 @@ function usePressState() {
 
 /* ============================== KEY COMPONENT ============================== */
 
-const Key = memo(function Key({ config, rowIndex, tier, theme, registerTrigger, onActivate, onDeactivate }) {
+const Key = memo(function Key({ config, rowIndex, tier, theme: themeProp, registerTrigger, onActivate, onDeactivate }) {
   const { id, label, shiftLabel, width, align, small, muted } = config;
+  const theme = useMemo(() => {
+    if (!themeProp.multiColor) return themeProp;
+    const c = getPrismKeyColors(id);
+    return { ...themeProp, keycapBase: c.bg, legendInk: c.ink, legendInkSoft: c.ink, darkKeys: c.dark };
+  }, [themeProp, id]);
   const w = width || 1;
   const al = align || "center";
   const [pointerPressed, pressPointer, releasePointer] = usePressState();
@@ -994,7 +1014,20 @@ const FUNNY_PARAGRAPHS = [
   "A grumpy old troll opened a bakery under the bridge and became famous for his cinnamon rolls, though customers agree the true secret ingredient is simply pure unfiltered troll sarcasm.",
   "The superhero's cape got stuck in a revolving door for twenty embarrassing minutes while a crowd gathered, cheered ironically, and one small child asked if this was part of the show.",
   "My cousin's hamster escaped its cage, built a tiny fortress out of couch cushions, and has been successfully avoiding capture using nothing but sheer determination and a stolen bag of popcorn.",
+  "My cat is officially the boss of this house, has never paid rent once, sleeps on my keyboard during every important meeting, and still expects breakfast served exactly four minutes early every single morning.",
+  "The dog held a full staff meeting with the squirrels outside, handed out imaginary badges, and then forgot the entire agenda the moment somebody threw a tennis ball across the yard.",
+  "My houseplant has apparently unionized with the other houseplants, refuses to grow unless given classical music, and files a formal complaint every time I forget to water it on schedule.",
+  "The cat knocked the glass off the table, made direct unblinking eye contact the entire time, and then walked away like a tiny feline mob boss who just settled an old score.",
+  "My fish tank has somehow developed a strict social hierarchy, complete with a bully guppy who steals food, a nervous snail who avoids conflict, and one goldfish who runs everything from the castle decoration.",
+  "The toddler declared himself supreme ruler of the living room, issued a royal decree banning vegetables forever, and then immediately abdicated the throne for a nap at exactly two in the afternoon.",
+  "My cat scheduled a dramatic three am zoomies session through the entire apartment, knocked over two plants, and then acted deeply offended when I questioned his very reasonable life choices.",
+  "The office cat now attends every meeting, sits directly on the important paperwork, and somehow still gets promoted faster than anyone else despite contributing absolutely nothing except chaos and fur.",
+  "My dog is convinced the vacuum cleaner is a mortal enemy, barks at it with tremendous bravery from behind the couch, and retreats the instant it actually moves an inch closer.",
 ];
+
+function cleanWord(w) {
+  return w.toLowerCase().replace(/[^a-z0-9']/g, "");
+}
 
 function pickFunnyWords(count) {
   const words = [];
@@ -1005,13 +1038,12 @@ function pickFunnyWords(count) {
       while (usedIdx.has(idx)) idx = Math.floor(Math.random() * FUNNY_PARAGRAPHS.length);
       usedIdx.add(idx);
     }
-    words.push(...FUNNY_PARAGRAPHS[idx].split(" "));
+    words.push(...FUNNY_PARAGRAPHS[idx].split(" ").map(cleanWord).filter(Boolean));
   }
   return words.slice(0, count);
 }
 
 const TIME_OPTIONS = [15, 30, 60, 120];
-const WORDS_OPTIONS = [10, 25, 50, 100];
 
 function formatClock(seconds) {
   const s = Math.max(0, Math.round(seconds));
@@ -1054,41 +1086,107 @@ function LiveWpmChart({ samples }) {
   );
 }
 
-function TypingArea({ text, typed }) {
-  const chars = text.split("");
-  let currentWordStart = 0;
+const LINE_FONT_PX = 22;
+const LINE_HEIGHT_PX = 36;
+const VISIBLE_LINES = 4;
+const PAGE_LINES = 2;
+
+function measureMonoCharWidth(fontPx) {
+  try {
+    const canvas = measureMonoCharWidth._c || (measureMonoCharWidth._c = document.createElement("canvas"));
+    const ctx = canvas.getContext("2d");
+    ctx.font = `${fontPx}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    return ctx.measureText("M").width;
+  } catch (e) { return fontPx * 0.6; }
+}
+
+function wrapTextToLines(text, charsPerLine) {
+  const cpl = Math.max(6, charsPerLine);
+  const lines = [];
+  let lineStart = 0;
+  let lastSpace = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === " ") lastSpace = i;
+    if (i - lineStart >= cpl) {
+      if (lastSpace > lineStart) {
+        lines.push({ start: lineStart, end: lastSpace });
+        lineStart = lastSpace + 1;
+        lastSpace = -1;
+      } else {
+        lines.push({ start: lineStart, end: i });
+        lineStart = i;
+      }
+    }
+  }
+  if (lineStart < text.length) lines.push({ start: lineStart, end: text.length });
+  return lines;
+}
+
+function TypingArea({ text, typed, onNeedMoreWords }) {
+  const containerRef = useRef(null);
+  const [charsPerLine, setCharsPerLine] = useState(48);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const compute = () => {
+      const w = el.clientWidth;
+      const cw = measureMonoCharWidth(LINE_FONT_PX) || 12;
+      setCharsPerLine(Math.max(6, Math.floor(w / cw) - 1));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const lines = useMemo(() => wrapTextToLines(text, charsPerLine), [text, charsPerLine]);
+
+  const currentLineIndex = useMemo(() => {
+    for (let i = 0; i < lines.length; i++) {
+      if (typed.length <= lines[i].end) return i;
+    }
+    return Math.max(0, lines.length - 1);
+  }, [lines, typed.length]);
+
+  useEffect(() => {
+    if (lines.length - currentLineIndex < VISIBLE_LINES + 6) onNeedMoreWords && onNeedMoreWords();
+  }, [lines.length, currentLineIndex, onNeedMoreWords]);
+
+  const pageIndex = Math.floor(currentLineIndex / PAGE_LINES);
+  const firstVisibleLine = pageIndex * PAGE_LINES;
+  const scrollOffsetPx = firstVisibleLine * LINE_HEIGHT_PX;
+
   return (
-    <div className="font-mono text-lg sm:text-xl leading-relaxed tracking-wide select-none" style={{ wordBreak: "break-word" }}>
-      {(() => {
-        const words = text.split(" ");
-        let offset = 0;
-        return words.map((word, wi) => {
-          const wordStart = offset;
-          const wordEnd = offset + word.length;
-          offset = wordEnd + 1;
-          const isCurrentWord = typed.length >= wordStart && typed.length <= wordEnd;
-          const wordChars = word.split("").map((ch, ci) => {
-            const globalIdx = wordStart + ci;
-            let cls = "text-neutral-300";
-            if (globalIdx < typed.length) {
-              cls = typed[globalIdx] === ch ? "text-neutral-800" : "text-red-500 bg-red-50";
-            } else if (globalIdx === typed.length) {
-              cls = "text-neutral-300 border-l-2 border-[#b5651d] animate-pulse";
-            }
-            return <span key={ci} className={cls}>{ch}</span>;
-          });
+    <div ref={containerRef} className="relative overflow-hidden" style={{ height: LINE_HEIGHT_PX * VISIBLE_LINES }}>
+      <div style={{ transform: `translateY(${-scrollOffsetPx}px)`, transition: "transform 380ms cubic-bezier(0.32,0.72,0.24,1)" }}>
+        {lines.map((line, li) => {
+          const isLastOfNextLine = lines[li + 1];
           return (
-            <span key={wi} className={`inline-block mr-2 rounded px-0.5 ${isCurrentWord ? "bg-[#F1DCAE]/70" : ""}`}>
-              {wordChars}
-            </span>
+            <div key={li} className="font-mono select-none whitespace-pre" style={{ height: LINE_HEIGHT_PX, lineHeight: `${LINE_HEIGHT_PX}px`, fontSize: LINE_FONT_PX, letterSpacing: "0.01em" }}>
+              {text.slice(line.start, line.end).split("").map((ch, ci) => {
+                const globalIdx = line.start + ci;
+                let cls = "text-neutral-300";
+                if (globalIdx < typed.length) {
+                  cls = typed[globalIdx] === ch ? "text-neutral-800" : "text-red-500 bg-red-50";
+                } else if (globalIdx === typed.length) {
+                  cls = "text-neutral-300 border-l-2 border-[#b5651d] animate-pulse";
+                }
+                return <span key={ci} className={cls}>{ch}</span>;
+              })}
+              {isLastOfNextLine && typed.length === line.end && (
+                <span className="text-neutral-300 border-l-2 border-[#b5651d] animate-pulse">&nbsp;</span>
+              )}
+            </div>
           );
-        });
-      })()}
+        })}
+      </div>
     </div>
   );
 }
 
 /* ============================== APP ============================== */
+
 
 function ToggleOffOn({ label, value, onChange }) {
   return (
@@ -1173,29 +1271,12 @@ function App() {
   const [typingMode, setTypingMode] = useState(true);
 
   const [timeLimit, setTimeLimit] = useState(() => loadSetting("timeLimit", 60));
-  const [wordsCount, setWordsCount] = useState(() => loadSetting("wordsCount", 50));
-  const [mode, setMode] = useState(() => loadSetting("mode", "time"));
-  const [punctuation, setPunctuation] = useState(() => loadSetting("punctuation", false));
-  const [numbers, setNumbers] = useState(() => loadSetting("numbers", false));
 
   useEffect(() => {
-    saveSettings({ layout, themeKey, soundKey, lighting, volume, timeLimit, wordsCount, mode, punctuation, numbers });
-  }, [layout, themeKey, soundKey, lighting, volume, timeLimit, wordsCount, mode, punctuation, numbers]);
+    saveSettings({ layout, themeKey, soundKey, lighting, volume, timeLimit });
+  }, [layout, themeKey, soundKey, lighting, volume, timeLimit]);
 
-  const stripPunctuation = (w) => w.replace(/[^a-zA-Z0-9']+$/g, "").replace(/^[^a-zA-Z0-9']+/g, "");
-
-  const buildWords = useCallback((count) => {
-    let list = pickFunnyWords(count);
-    if (!punctuation) {
-      list = list.map(stripPunctuation).filter(Boolean);
-    }
-    if (numbers) {
-      list = list.map((w, i) => (i % 6 === 5 ? String(Math.floor(Math.random() * 900) + 10) : w));
-    }
-    return list;
-  }, [punctuation, numbers]);
-
-  const [words, setWords] = useState(() => pickFunnyWords(50));
+  const [words, setWords] = useState(() => pickFunnyWords(80));
   const text = useMemo(() => words.join(" "), [words]);
   const [typed, setTyped] = useState("");
   const [status, setStatus] = useState("idle"); // idle | running | done
@@ -1214,9 +1295,12 @@ function App() {
     });
   }, []);
 
+  const extendWords = useCallback(() => {
+    setWords((prev) => [...prev, ...pickFunnyWords(40)]);
+  }, []);
 
   const startTest = useCallback(() => {
-    setWords(buildWords(mode === "words" ? wordsCount : Math.max(wordsCount, 60)));
+    setWords(pickFunnyWords(80));
     setTyped("");
     setElapsed(0);
     setLiveWpm([]);
@@ -1224,7 +1308,7 @@ function App() {
     setTypingMode(true);
     startRef.current = performance.now();
     lastSampleRef.current = 0;
-  }, [mode, wordsCount, buildWords]);
+  }, []);
 
   const stopTest = useCallback(() => {
     setStatus("idle");
@@ -1289,16 +1373,12 @@ function App() {
           return [...prev.slice(-11), w];
         });
       }
-      if (mode === "time" && secs >= timeLimit) finishTest();
+      if (secs >= timeLimit) finishTest();
     }, 200);
     return () => clearInterval(interval);
-  }, [status, mode, timeLimit, finishTest]);
+  }, [status, timeLimit, finishTest]);
 
-  useEffect(() => {
-    if (status === "running" && typed.length >= text.length && text.length > 0) finishTest();
-  }, [typed, text, status, finishTest]);
-
-  const progress = mode === "time" ? Math.min(1, elapsed / timeLimit) : Math.min(1, typed.length / Math.max(1, text.length));
+  const progress = Math.min(1, elapsed / timeLimit);
 
   const consistency = useMemo(() => {
     if (liveWpm.length < 2) return 100;
@@ -1434,15 +1514,9 @@ function App() {
           <div className="w-full rounded-2xl bg-white border border-neutral-200 shadow-sm px-4 py-3 flex flex-wrap items-end gap-3">
             <Dropdown icon={<ClockIcon />} label="Time" value={timeLimit} onChange={(v) => setTimeLimit(Number(v))}
               options={TIME_OPTIONS.map((t) => ({ value: t, label: `${t} Seconds` }))} />
-            <Dropdown icon={<ListIcon />} label="Words" value={wordsCount} onChange={(v) => setWordsCount(Number(v))}
-              options={WORDS_OPTIONS.map((t) => ({ value: t, label: `${t} Words` }))} />
-            <Dropdown icon={<ClockIcon />} label="Mode" value={mode} onChange={setMode}
-              options={[{ value: "time", label: "Time" }, { value: "words", label: "Words" }]} />
-            <ToggleOffOn label="Punctuation" value={punctuation} onChange={setPunctuation} />
-            <ToggleOffOn label="Numbers" value={numbers} onChange={setNumbers} />
             <div className="flex flex-col items-end gap-1 ml-auto">
               <button type="button" onClick={toggleTest} className={`flex items-center gap-2 font-semibold px-5 py-2.5 rounded-xl text-sm shadow-sm transition-colors ${status === "running" ? "bg-[#a33a2e] hover:bg-[#8c3026] text-white" : "bg-[#332217] hover:bg-[#241a11] text-white"}`}>
-                <span>{status === "running" ? "■" : "▶"}</span> {status === "running" ? "Stop Test" : "Start Test"}
+                {status === "running" ? "Stop Test" : "Start Test"}
               </button>
               <span className="text-[11px] text-neutral-400">Press Enter to {status === "running" ? "stop" : "start"}</span>
             </div>
@@ -1450,15 +1524,15 @@ function App() {
 
           {/* Text card */}
           <div className="relative w-full rounded-2xl bg-white border border-neutral-200 shadow-sm p-4 sm:p-5 flex flex-col gap-3">
-            <div className="rounded-xl bg-[#FCFBF8] border border-neutral-100 p-4 min-h-[7rem] max-h-[9rem] overflow-hidden">
-              <TypingArea text={text} typed={typed} />
+            <div className="rounded-xl bg-[#FCFBF8] border border-neutral-100 p-4 overflow-hidden">
+              <TypingArea text={text} typed={typed} onNeedMoreWords={extendWords} />
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-neutral-400 tabular-nums w-10">{formatClock(mode === "time" ? elapsed : 0)}</span>
+              <span className="text-xs text-neutral-400 tabular-nums w-10">{formatClock(elapsed)}</span>
               <div className="flex-1 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
                 <div className="h-full bg-[#c99a52] transition-all" style={{ width: `${progress * 100}%` }} />
               </div>
-              <span className="text-xs text-neutral-400 tabular-nums w-10 text-right">{mode === "time" ? formatClock(timeLimit) : `${text.split(" ").length}w`}</span>
+              <span className="text-xs text-neutral-400 tabular-nums w-10 text-right">{formatClock(timeLimit)}</span>
             </div>
 
             {status === "done" && (
