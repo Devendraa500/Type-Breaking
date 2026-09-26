@@ -194,10 +194,14 @@ const THEMES = {
 };
 
 function getPrismKeyColors(id) {
-  const red = new Set(["esc", "enter", "space"]);
+  const red = new Set(["esc", "enter", "space", "up", "down", "left", "right"]);
   const navy = new Set(["tab", "capslock", "lshift", "rshift", "lctrl", "lwin", "lalt", "ralt", "rwin", "fn", "backspace", "grave"]);
+  const steel = new Set(["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12"]);
+  const gold = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
   if (red.has(id)) return { bg: "#c23b34", ink: "#fbeee9", dark: true };
   if (navy.has(id)) return { bg: "#232a42", ink: "#eef0f6", dark: true };
+  if (steel.has(id)) return { bg: "#c7ccd6", ink: "#2a2e38", dark: false };
+  if (gold.has(id)) return { bg: "#e9c877", ink: "#3a2c0f", dark: false };
   return { bg: "#f5f1e6", ink: "#2a2620", dark: false };
 }
 
@@ -1045,6 +1049,16 @@ function pickFunnyWords(count) {
 
 const TIME_OPTIONS = [15, 30, 60, 120];
 
+const SHARE_TAGLINES = [
+  "while my cat silently judged me",
+  "while a dinosaur ordered a pumpkin spice latte",
+  "while a raccoon unionized the trash cans",
+  "while a ghost alphabetized my snacks",
+  "while a wizard microwaved his soup into oblivion",
+  "while my dog declared war on the vacuum",
+  "while a troll sold cinnamon rolls under a bridge",
+];
+
 function formatClock(seconds) {
   const s = Math.max(0, Math.round(seconds));
   const m = Math.floor(s / 60);
@@ -1150,7 +1164,7 @@ function TypingArea({ text, typed, onNeedMoreWords }) {
   }, [lines, typed.length]);
 
   useEffect(() => {
-    if (lines.length - currentLineIndex < VISIBLE_LINES + 6) onNeedMoreWords && onNeedMoreWords();
+    if (lines.length - currentLineIndex < VISIBLE_LINES + 8) onNeedMoreWords && onNeedMoreWords();
   }, [lines.length, currentLineIndex, onNeedMoreWords]);
 
   const pageIndex = Math.floor(currentLineIndex / PAGE_LINES);
@@ -1159,6 +1173,8 @@ function TypingArea({ text, typed, onNeedMoreWords }) {
 
   return (
     <div ref={containerRef} className="relative overflow-hidden" style={{ height: LINE_HEIGHT_PX * VISIBLE_LINES }}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-3 z-10" style={{ background: "linear-gradient(180deg, #FCFBF8, transparent)" }} />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 z-10" style={{ background: "linear-gradient(0deg, #FCFBF8, transparent)" }} />
       <div style={{ transform: `translateY(${-scrollOffsetPx}px)`, transition: "transform 380ms cubic-bezier(0.32,0.72,0.24,1)" }}>
         {lines.map((line, li) => {
           const isLastOfNextLine = lines[li + 1];
@@ -1271,10 +1287,12 @@ function App() {
   const [typingMode, setTypingMode] = useState(true);
 
   const [timeLimit, setTimeLimit] = useState(() => loadSetting("timeLimit", 60));
+  const [bestWpm, setBestWpm] = useState(() => loadSetting("bestWpm", 0));
+  const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
-    saveSettings({ layout, themeKey, soundKey, lighting, volume, timeLimit });
-  }, [layout, themeKey, soundKey, lighting, volume, timeLimit]);
+    saveSettings({ layout, themeKey, soundKey, lighting, volume, timeLimit, bestWpm });
+  }, [layout, themeKey, soundKey, lighting, volume, timeLimit, bestWpm]);
 
   const [words, setWords] = useState(() => pickFunnyWords(80));
   const text = useMemo(() => words.join(" "), [words]);
@@ -1340,6 +1358,16 @@ function App() {
   const wpm = status === "idle" ? 0 : Math.round((correctCount / 5) / minutes);
   const rawWpm = status === "idle" ? 0 : Math.round((typed.length / 5) / minutes);
   const accuracy = typed.length ? Math.round((correctCount / typed.length) * 100) : 100;
+
+  useEffect(() => {
+    if (status === "done" && wpm > bestWpm) setBestWpm(wpm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  const wordsTyped = useMemo(() => {
+    const consumed = typed.trim();
+    return consumed ? consumed.split(/\s+/).length : 0;
+  }, [typed]);
 
   const handleType = useCallback((ch) => {
     if (status === "done") return;
@@ -1514,6 +1542,14 @@ function App() {
           <div className="w-full rounded-2xl bg-white border border-neutral-200 shadow-sm px-4 py-3 flex flex-wrap items-end gap-3">
             <Dropdown icon={<ClockIcon />} label="Time" value={timeLimit} onChange={(v) => setTimeLimit(Number(v))}
               options={TIME_OPTIONS.map((t) => ({ value: t, label: `${t} Seconds` }))} />
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Words Typed</span>
+              <span className="px-3 py-2 rounded-xl bg-[#F1ECE3] border border-neutral-200 text-sm font-semibold text-neutral-700 tabular-nums">{wordsTyped}</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1">🏆 Best WPM</span>
+              <span className="px-3 py-2 rounded-xl bg-[#F1ECE3] border border-neutral-200 text-sm font-semibold text-neutral-700 tabular-nums">{bestWpm}</span>
+            </div>
             <div className="flex flex-col items-end gap-1 ml-auto">
               <button type="button" onClick={toggleTest} className={`flex items-center gap-2 font-semibold px-5 py-2.5 rounded-xl text-sm shadow-sm transition-colors ${status === "running" ? "bg-[#a33a2e] hover:bg-[#8c3026] text-white" : "bg-[#332217] hover:bg-[#241a11] text-white"}`}>
                 {status === "running" ? "Stop Test" : "Start Test"}
@@ -1548,6 +1584,21 @@ function App() {
                 <div className="flex items-center gap-3">
                   <button onClick={startTest} className="flex items-center gap-2 bg-[#332217] hover:bg-[#241a11] text-white font-semibold px-5 py-2 rounded-xl text-sm shadow-sm transition-colors">
                     ↻ Try Again
+                  </button>
+                  <button
+                    onClick={() => {
+                      const tag = SHARE_TAGLINES[Math.floor(Math.random() * SHARE_TAGLINES.length)];
+                      const msg = `I just typed ${wpm} WPM at ${accuracy}% accuracy ${tag} on my Vintage Keyboard Studio ⌨️`;
+                      if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(msg).then(() => {
+                          setShareCopied(true);
+                          setTimeout(() => setShareCopied(false), 1800);
+                        });
+                      }
+                    }}
+                    className="flex items-center gap-1.5 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-medium px-4 py-2 rounded-xl text-sm shadow-sm transition-colors"
+                  >
+                    {shareCopied ? "Copied!" : "Share Result"}
                   </button>
                   <button onClick={stopTest} className="text-sm font-medium text-neutral-400 hover:text-neutral-700 px-3 py-2">Dismiss</button>
                 </div>
